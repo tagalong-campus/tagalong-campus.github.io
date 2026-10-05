@@ -3,6 +3,7 @@
 const H = 3600000;
 export const EVENT_LENGTH = 2 * H;
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const hhmm = d => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 const dayStart = d => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 
@@ -11,7 +12,7 @@ export function fmtWhen(ms, now = Date.now()) {
   if (days === 0) return (d.getHours() >= 19 ? 'Tonight ' : 'Today ') + hhmm(d);
   if (days === 1) return 'Tomorrow ' + hhmm(d);
   if (days > 1 && days < 7) return DAYS[d.getDay()] + ' ' + hhmm(d);
-  return d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' }) + ' ' + hhmm(d);
+  return `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]} ${hhmm(d)}`;
 }
 export const whenLabel = p => p.startsAt ? fmtWhen(p.startsAt) : p.when;
 export const endsAt = p => p.endsAt || (p.startsAt ? p.startsAt + EVENT_LENGTH : 0);
@@ -26,10 +27,8 @@ export function at(h, m, { dayOffset = 0, weekday = null } = {}, now = Date.now(
   d.setHours(h, m, 0, 0);
   return d.getTime();
 }
-// Choices for the post form. "In 30 minutes" lets the class see a whole plan, start to end, during the demo.
-export function whenChoices(now = Date.now()) {
-  const soon = Math.ceil((now + 30 * 60000) / (5 * 60000)) * 5 * 60000;
-  const list = [soon, at(17, 30, {}, now), at(20, 0, {}, now), at(12, 30, { dayOffset: 1 }, now), at(19, 0, { dayOffset: 1 }, now), at(15, 0, { weekday: 6 }, now), at(11, 0, { weekday: 0 }, now)]
-    .filter(t => t > now + 10 * 60000);
-  return [...new Set(list)].sort((a, b) => a - b).map(t => ({ at: t, label: t === soon ? `In 30 minutes (${hhmm(new Date(t))})` : fmtWhen(t, now) }));
+// The value format a datetime-local input expects, in local time: "2026-10-06T18:30".
+export function toLocalInput(ms) {
+  const d = new Date(ms), z = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}`;
 }

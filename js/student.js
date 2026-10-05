@@ -2,7 +2,7 @@ import { connect } from './backend.js';
 import { check, DRINKS, isRude } from './policy.js';
 import { CAMPUS_NAME } from './config.js';
 import { CLUBS, clubInfo, clubById } from './clubs.js';
-import { whenLabel, whenChoices, isOver } from './when.js';
+import { whenLabel, fmtWhen, toLocalInput, isOver } from './when.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -342,8 +342,8 @@ function postHTML() {
       <label id="mem-wrap" hidden>Who can come<select id="f-mem"><option value="0">Open to everyone</option><option value="1">Club members only (with members' channel)</option></select></label>
       <label>What do you want to do?<input type="text" id="f-title" maxlength="50" placeholder="e.g. Sunset picnic in the park"></label>
       <label>Details (optional)<input type="text" id="f-desc" maxlength="80" placeholder="Anything people should know"></label>
-      <div class="two"><label>Category<select id="f-cat">${CATS.map(c => `<option>${c}</option>`).join('')}</select></label>
-      <label>When<select id="f-when">${whenChoices().map(w => `<option value="${w.at}">${esc(w.label)}</option>`).join('')}</select></label></div>
+      <label>Category<select id="f-cat">${CATS.map(c => `<option>${c}</option>`).join('')}</select></label>
+      <label>When<input type="datetime-local" id="f-when" step="300" min="${toLocalInput(Date.now())}" value="${toLocalInput(Math.ceil((Date.now() + 30 * 60000) / 300000) * 300000)}"></label>
       <label>Where<input type="text" id="f-place" maxlength="40" placeholder="Pick a public place" value="Student union terrace"></label>
       <label id="f-max-wrap">Group size (at least 3)<select id="f-max"><option value="6" selected>3 to 6 people</option><option value="10">3 to 10 people</option><option value="0">3 or more, no limit</option></select></label>
       <div class="flabel">Tags<div class="dchips">${TAGS.map((t, i) => `<label class="dchip"><input type="checkbox" id="t-${i}">${esc(t)}</label>`).join('')}</div></div>
@@ -507,12 +507,14 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
 
 /* ---------- Posting ---------- */
 function readForm() {
-  const as = $('#f-as').value, club = as !== 'me', alc = $('#f-alc').checked, sel = $('#f-when');
+  const as = $('#f-as').value, club = as !== 'me', alc = $('#f-alc').checked;
+  // datetime-local gives "2026-10-06T18:30" in the phone's own time zone.
+  const startsAt = new Date($('#f-when').value).getTime() || 0;
   const membersOnly = club && $('#f-mem').value === '1';
   return {
     space: club ? 'official' : 'informal', club: club ? as : null, clubId: club ? clubInfo(as)?.id || null : null, membersOnly,
     title: $('#f-title').value.trim(), desc: $('#f-desc').value.trim(), cat: $('#f-cat').value,
-    startsAt: +sel.value, when: sel.options[sel.selectedIndex].text.replace(/^In 30 minutes \((.*)\)$/, 'Today $1'),
+    startsAt, when: startsAt ? fmtWhen(startsAt) : '',
     place: $('#f-place').value.trim() || 'Campus', max: club ? 0 : +$('#f-max').value,
     newcomer: $('#f-new').checked, tags: TAGS.filter((t, i) => $('#t-' + i).checked), alcohol: alc,
     decl: club && alc ? {
@@ -559,6 +561,7 @@ async function submitPost() {
   if (wait > 0) { toast(`<span>You just posted. You can post again in ${wait} seconds.</span>`); return; }
   const post = readForm();
   if (!post.title) { $('#f-title').focus(); return; }
+  if (!post.startsAt || post.startsAt < Date.now() - 60000) { toast('<span>Pick a date and time in the future.</span>'); $('#f-when').focus(); return; }
   const res = check(post, APP.policy);
   const firstIssue = (res.R.find(r => r.l === 'block') || res.R.find(r => r.l === 'review') || { t: '' }).t;
   if (res.out === 'block' || res.out === 'contact') {

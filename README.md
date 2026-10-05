@@ -5,6 +5,8 @@ A live prototype of Tagalong for presenting in class. Everyone scans a QR code, 
 - `index.html`: the student app (what the QR code opens)
 - `console.html`: the university console for the projector (presenter sign-in)
 - `js/policy.js`: alcohol policy presets and the auto-check
+- `js/clubs.js`: the official clubs (names, descriptions, website links)
+- `js/when.js`: event times, and when an event is over
 - `js/backend.js`: the data layer (Firebase, or local test mode)
 - `firestore.rules`: database security rules
 
@@ -43,13 +45,17 @@ The Firebase web config isn't a secret: it identifies the project, and the rules
 ## Running a class
 
 1. Open `console.html` on the projector and sign in. The first sign-in creates the campus.
-2. Optional: **Settings → Add starter plans**, so the feed isn't empty when people scan in.
+2. Optional: **Settings → Add starter plans**, so the feed isn't empty when people scan in. It adds plans of different sizes, open and members-only club events, and example messages in the club channels and in the plans that are going ahead.
 3. Show the QR code. Students enter a first name and year.
 4. To show the auto-check, switch presets in **Alcohol policy** and ask someone to post one of the example plans.
-5. Afterwards: **Settings → Reset campus** deletes all names, plans and chats.
+5. To show a chat being deleted after an event: **Live → End now** on a plan that's going ahead. Events also end on their own 2 hours after they start, while the console is open.
+6. Afterwards: **Settings → Reset campus** deletes all names, plans, chats and club memberships.
 
 ## Known limits (fine for a demo, not for production)
 
 - The auto-check runs on the student's phone, so someone with developer tools could get around it. In the real product it would run on a server, using an AI model rather than a keyword list.
 - Anyone can post "as a club" in the demo. In the real product, only verified club admins can.
+- "Request to join" a club is accepted straight away. In the real product, the club's admins would approve it, or send people to the club's application.
+- Ended events' chats are deleted by the console while it's open. In the real product, a server job would do it.
+- After changing `firestore.rules`, paste it into Firebase again (step 6 above). Club channels and members-only events need the latest rules.
 - Free Firebase limits (50,000 reads a day) cover a class of 40 comfortably. Leaving the console open for days isn't a problem either.

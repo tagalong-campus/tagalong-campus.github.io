@@ -4,9 +4,11 @@
 //
 // Data layout (Firestore paths; the local mode mirrors it):
 //   app/current                              { sid, policy, settings }
-//   sessions/{sid}/people/{uid}              { name, year, newcomer, at }
-//   sessions/{sid}/plans/{planId}            { title, ..., host, going: [uid], max (0 = no limit), status, deadlineAt }
+//   sessions/{sid}/people/{uid}              { name, year, newcomer, at, clubs: [clubId] }
+//   sessions/{sid}/plans/{planId}            { title, ..., host, going: [uid], max (0 = no limit), status, deadlineAt, startsAt, membersOnly, clubId, tags }
 //   sessions/{sid}/plans/{planId}/messages/* { from, text, at }
+//   sessions/{sid}/clubchats/{clubId}/messages/* { from, text, at }   members-only club channels
+// Chat functions take `kind`: 'plans' (a plan's group chat, the default) or 'clubchats' (a club channel).
 //   sessions/{sid}/log/*                     { kind, text, at }
 
 import { firebaseConfig } from './config.js';
@@ -36,7 +38,8 @@ async function firebaseBackend() {
   const isAdmin = () => !!auth.currentUser && !auth.currentUser.isAnonymous;
   const col = (sid, c) => F.collection(db, 'sessions', sid, c);
   const planRef = (sid, id) => F.doc(db, 'sessions', sid, 'plans', id);
-  const msgCol = (sid, id) => F.collection(db, 'sessions', sid, 'plans', id, 'messages');
+  const msgCol = (sid, id, kind = 'plans') => F.collection(db, 'sessions', sid, kind, id, 'messages');
+  const deleteAll = async q => { const snap = await F.getDocs(q); await Promise.all(snap.docs.map(d => F.deleteDoc(d.ref))); };
   const list = snap => snap.docs.map(d => ({ id: d.id, ...d.data() }));
   const onErr = e => console.error('[tagalong]', e);
   // When a whole class taps Join on the same plan in the same second, transactions collide.
@@ -62,13 +65,15 @@ async function firebaseBackend() {
     watchApp: cb => F.onSnapshot(F.doc(db, 'app', 'current'), s => cb(s.exists() ? s.data() : null), onErr),
     setApp: patch => F.setDoc(F.doc(db, 'app', 'current'), patch, { merge: true }),
     watch: (sid, c, cb) => F.onSnapshot(col(sid, c), s => cb(list(s)), onErr),
-    watchMessages: (sid, id, cb) => F.onSnapshot(F.query(msgCol(sid, id), F.orderBy('at')), s => cb(list(s)), onErr),
+    watchMessages: (sid, id, cb, kind) => F.onSnapshot(F.query(msgCol(sid, id, kind), F.orderBy('at')), s => cb(list(s)), onErr),
 
     setDoc: (sid, c, id, data) => F.setDoc(F.doc(db, 'sessions', sid, c, id), data),
     addPlan: async (sid, plan) => (await F.addDoc(col(sid, 'plans'), plan)).id,
     patchPlan: (sid, id, patch) => F.updateDoc(planRef(sid, id), patch),
     leavePlan: (sid, id, uid) => F.updateDoc(planRef(sid, id), { going: F.arrayRemove(uid) }),
-    sendMessage: (sid, id, msg) => F.addDoc(msgCol(sid, id), { ...msg, at: Date.now() }),
+    sendMessage: (sid, id, msg, kind) => F.addDoc(msgCol(sid, id, kind), { at: Date.now(), ...msg }),
+    // Admin: deletes a chat's messages (used when an event is over).
+    deleteMessages: (sid, id, kind) => deleteAll(msgCol(sid, id, kind)),
     addLog: (sid, entry) => F.addDoc(col(sid, 'log'), { ...entry, at: Date.now() }).catch(onErr),
 
     // Adds uid to the plan; flips it to "ahead" when the third person joins. Returns true if it went ahead.
@@ -89,17 +94,13 @@ async function firebaseBackend() {
       return ahead;
     }, { maxAttempts: 10 })),
 
-    // Admin: deletes every person, plan, chat and log entry in a session.
-    wipeSession: async sid => {
+    // Admin: deletes every person, plan, chat and log entry in a session. Club channels have no parent
+    // document to list, so the caller passes the club ids.
+    wipeSession: async (sid, clubIds = []) => {
       const plans = await F.getDocs(col(sid, 'plans'));
-      for (const p of plans.docs) {
-        const msgs = await F.getDocs(msgCol(sid, p.id));
-        await Promise.all(msgs.docs.map(m => F.deleteDoc(m.ref)));
-      }
-      for (const c of ['plans', 'people', 'log']) {
-        const snap = await F.getDocs(col(sid, c));
-        await Promise.all(snap.docs.map(d => F.deleteDoc(d.ref)));
-      }
+      for (const p of plans.docs) await deleteAll(msgCol(sid, p.id));
+      for (const c of clubIds) await deleteAll(msgCol(sid, c, 'clubchats'));
+      for (const c of ['plans', 'people', 'log']) await deleteAll(col(sid, c));
     }
   };
 }
@@ -125,6 +126,7 @@ function localBackend() {
   };
   const sess = (st, sid) => st.s[sid] || (st.s[sid] = { people: {}, plans: {}, log: {}, msgs: {} });
   const arr = o => Object.entries(o || {}).map(([id, v]) => ({ id, ...v }));
+  const chatKey = (id, kind = 'plans') => kind === 'plans' ? id : kind + ':' + id;
   const watchWith = (get, cb) => {
     let last = '';
     const w = () => { const v = get(load()); const j = JSON.stringify(v); if (j !== last) { last = j; cb(v); } };
@@ -144,13 +146,14 @@ function localBackend() {
     watchApp: cb => watchWith(st => st.app, cb),
     setApp: async patch => mutate(st => { st.app = { ...(st.app || {}), ...patch }; }),
     watch: (sid, c, cb) => watchWith(st => arr(sess(st, sid)[c]), cb),
-    watchMessages: (sid, id, cb) => watchWith(st => arr(sess(st, sid).msgs[id]).sort((a, b) => a.at - b.at), cb),
+    watchMessages: (sid, id, cb, kind) => watchWith(st => arr(sess(st, sid).msgs[chatKey(id, kind)]).sort((a, b) => a.at - b.at), cb),
 
     setDoc: async (sid, c, id, data) => mutate(st => { sess(st, sid)[c][id] = data; }),
     addPlan: async (sid, plan) => mutate(st => { const id = newId(); sess(st, sid).plans[id] = plan; return id; }),
     patchPlan: async (sid, id, patch) => mutate(st => { const p = sess(st, sid).plans[id]; if (p) Object.assign(p, patch); }),
     leavePlan: async (sid, id, u) => mutate(st => { const p = sess(st, sid).plans[id]; if (p) p.going = p.going.filter(x => x !== u); }),
-    sendMessage: async (sid, id, msg) => mutate(st => { const m = sess(st, sid).msgs; (m[id] || (m[id] = {}))[newId()] = { ...msg, at: Date.now() }; }),
+    sendMessage: async (sid, id, msg, kind) => mutate(st => { const m = sess(st, sid).msgs, k = chatKey(id, kind); (m[k] || (m[k] = {}))[newId()] = { at: Date.now(), ...msg }; }),
+    deleteMessages: async (sid, id, kind) => mutate(st => { delete sess(st, sid).msgs[chatKey(id, kind)]; }),
     addLog: async (sid, entry) => mutate(st => { sess(st, sid).log[newId()] = { ...entry, at: Date.now() }; }),
 
     joinPlan: async (sid, id, u, aheadText) => mutate(st => {

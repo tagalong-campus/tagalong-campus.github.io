@@ -32,6 +32,9 @@ button{cursor:pointer}
 .b-new{background:var(--go-soft);color:var(--go)}
 .b-alc{background:var(--warn-soft);color:var(--warn)}
 .b-you{border:1px solid var(--brand);color:var(--brand)}
+.b-mem{background:var(--ink);color:var(--app);display:inline-flex;align-items:center;gap:3px}
+.b-mem svg{width:10px;height:10px}
+.b-tag{border:1px solid var(--line);color:var(--muted);background:var(--card)}
 .badges{display:flex;flex-wrap:wrap;gap:5px}
 .av{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:13px;color:var(--ink);flex:none;border:2px solid var(--app)}
 .av.me{background:var(--brand)!important;color:var(--on-brand)}
@@ -97,7 +100,7 @@ body.student{background:var(--page)}
 .st{font-weight:700;white-space:nowrap}
 .st-warn{color:var(--warn)} .st-go{color:var(--go)} .st-x{color:var(--off)} .st-off{color:var(--ink)}
 
-.nav{position:sticky;bottom:0;display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid var(--line);background:var(--card);padding:8px 6px calc(10px + env(safe-area-inset-bottom,0px))}
+.nav{position:sticky;bottom:0;display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--line);background:var(--card);padding:8px 6px calc(10px + env(safe-area-inset-bottom,0px))}
 .nav button{border:0;background:transparent;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;font-weight:600;color:var(--muted);position:relative}
 .nav button[aria-current="page"]{color:var(--brand)}
 .dot-badge{position:absolute;top:-2px;left:calc(50% + 6px);min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--brand);color:var(--on-brand);font-size:10px;line-height:16px}
@@ -121,6 +124,22 @@ body.student{background:var(--page)}
 .row svg{color:var(--brand);flex:none}
 .host{display:flex;flex-direction:row;gap:10px;align-items:center}
 .host small{display:block;color:var(--muted);font-size:12px}
+.host.link{text-align:left;width:100%;color:inherit;font:inherit}
+.host.link > div{flex:1;min-width:0}
+.host .more{font-size:12px;font-weight:700;color:var(--brand);white-space:nowrap}
+.rule.mem{border-color:var(--ink)}
+.rule-top svg{vertical-align:-2px}
+.cav{width:40px;height:40px;border-radius:12px;background:var(--ink);color:var(--app);display:grid;place-items:center;font-weight:700;font-size:10.5px;flex:none}
+.cav.big{width:58px;height:58px;border-radius:16px;font-size:15px;background:var(--on-brand);color:var(--brand)}
+.club-top{display:flex;gap:12px;align-items:center}
+.club-top .badges{margin-bottom:4px}
+.club-card{flex-direction:row;align-items:center;gap:12px}
+.cc-txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.cc-txt small{color:var(--muted);font-size:12.5px}
+a.row{color:inherit;text-decoration:none}
+.lnk{color:var(--brand);font-weight:600;text-decoration:underline;text-underline-offset:2px}
+.note a{color:var(--brand);font-weight:600}
+.c-headbar .cav{width:34px;height:34px;border-radius:10px;font-size:10px}
 .d-foot{position:sticky;bottom:0;margin-top:auto;background:var(--app);border-top:1px solid var(--line);padding:12px 18px calc(14px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:6px}
 .d-foot .acts{display:flex;gap:8px}
 .cap{text-align:center;color:var(--muted);font-size:11.5px}
@@ -128,6 +147,7 @@ body.student{background:var(--page)}
 .form{display:flex;flex-direction:column;gap:12px}
 .form label{display:flex;flex-direction:column;gap:5px;font-size:12.5px;font-weight:600;color:var(--muted)}
 .form input[type=text],.form select{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 11px;font-size:16px;color:var(--ink);font-weight:500;width:100%}
+.flabel{display:flex;flex-direction:column;gap:6px;font-size:12.5px;font-weight:600;color:var(--muted)}
 .form .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .form .chk{flex-direction:row;align-items:center;gap:10px;font-weight:500;color:var(--ink);font-size:14px}
 .form .chk input{width:20px;height:20px;accent-color:var(--brand);flex:none}
@@ -223,6 +243,8 @@ body.console{background:var(--page);padding-inline:20px;padding-block:20px 40px}
 .pl .n{font-variant-numeric:tabular-nums;color:var(--muted);font-size:12px;text-align:center}
 .rm{border:0;background:transparent;color:var(--muted);font-size:12px;font-weight:600;padding:4px 6px;border-radius:8px}
 .rm:hover{color:var(--bad);background:var(--bad-soft)}
+.pl-acts{display:flex;gap:2px;justify-content:flex-end}
+.acts-log .ended,.acts-log .club{color:var(--muted);font-weight:600}
 .acts-log{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:13px}
 .acts-log li{display:grid;grid-template-columns:44px minmax(0,1fr);gap:8px}
 .acts-log time{color:var(--muted);font-variant-numeric:tabular-nums}

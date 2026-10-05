@@ -1,6 +1,8 @@
 import { connect, newId } from './backend.js';
 import { PRESETS, DRINKS, presetPolicy, defaultPolicy, policySummary } from './policy.js';
 import { CAMPUS_NAME } from './config.js';
+import { CLUBS } from './clubs.js';
+import { whenLabel, isOver, at } from './when.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -31,6 +33,7 @@ async function start() {
     renderAll();
   });
   setInterval(tickDeadlines, 5000);
+  setInterval(endFinished, 15000);
   setInterval(() => { if (admin && ui.tab === 'live') renderLive(); }, 10000);
 }
 let creating = false;
@@ -118,6 +121,23 @@ function buildShell() {
   if (window.QRCode) new window.QRCode($('#qr'), { text: STUDENT_URL, width: 440, height: 440, colorDark: '#231C17', colorLight: '#ffffff', correctLevel: window.QRCode.CorrectLevel.M });
   else $('#qr').textContent = 'QR code unavailable offline';
 }
+// Once an event is over, the console (open on the projector all class) deletes its group chat and marks it ended.
+// In the real product a server job would do this.
+const ending = new Set();
+// endNow: the id of a plan the presenter just ended with "End now".
+async function endFinished(endNow) {
+  if (!admin || !SID) return;
+  for (const p of PLANS) {
+    if (!['open', 'ahead', 'official'].includes(p.status) || !(isOver(p) || p.id === endNow) || ending.has(p.id)) continue;
+    ending.add(p.id);
+    try {
+      if (!p.official) await api.deleteMessages(SID, p.id);
+      await api.patchPlan(SID, p.id, { status: 'ended' });
+      log('ended', p.official || p.status !== 'ahead' ? `${p.title} has ended` : `${p.title} has ended, so its group chat was deleted`);
+    } catch (x) { console.error(x); }
+    ending.delete(p.id);
+  }
+}
 function renderTabs() {
   const n = PLANS.filter(p => p.status === 'review').length;
   $('#ctabs').innerHTML = [['live', 'Live'], ['policy', 'Alcohol policy'], ['queue', 'Review queue'], ['settings', 'Settings']].map(([k, l]) =>
@@ -136,7 +156,7 @@ function renderRoom() {
 }
 function renderLive() {
   const inf = PLANS.filter(p => !p.official && live(p));
-  const ahead = inf.filter(p => p.status === 'ahead').length, canc = inf.filter(p => p.status === 'cancelled').length, open = inf.length - ahead - canc;
+  const ahead = inf.filter(p => p.status === 'ahead' || (p.status === 'ended' && p.aheadAt)).length, canc = inf.filter(p => p.status === 'cancelled').length, open = inf.length - ahead - canc;
   const pct = inf.length ? Math.round(ahead / inf.length * 100) : 0;
   const ppl = realPeople().map(([id, p]) => ({ id, ...p })), newcomers = ppl.filter(p => p.newcomer);
   const grp = new Set(); PLANS.forEach(p => { if (p.status === 'ahead') p.going.forEach(id => grp.add(id)); });
@@ -144,7 +164,7 @@ function renderLive() {
   const cat = {}; PLANS.filter(live).forEach(p => { cat[p.cat] = (cat[p.cat] || 0) + p.going.length; });
   const cats = Object.entries(cat).filter(c => c[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, 6), cmax = Math.max(1, ...cats.map(c => c[1]));
   const order = { ahead: 0, open: 1, official: 2, cancelled: 3 };
-  const plans = PLANS.filter(live).sort((a, b) => order[a.status] - order[b.status] || b.postedAt - a.postedAt);
+  const plans = PLANS.filter(p => live(p) && p.status !== 'ended').sort((a, b) => order[a.status] - order[b.status] || b.postedAt - a.postedAt);
   const k = kind => LOG.filter(l => l.kind === kind);
   const posted = k('post'), blocked = k('blocked').length, review = k('review').length, checked = posted.length + blocked + review;
   $('#c-live').innerHTML = `
@@ -160,7 +180,7 @@ function renderLive() {
         const kk = Math.min(p.going.length, 3);
         const pill = p.official ? '<span class="pill of">Official</span>' : p.status === 'ahead' ? '<span class="pill go">Going ahead</span>' : p.status === 'cancelled' ? '<span class="pill x">Cancelled</span>' : `<span class="pill warn">Needs ${3 - kk}</span>`;
         const mid = p.official ? `<span class="n">${count(p)} going</span>` : `<div class="bar3">${[0, 1, 2].map(i => `<i class="${i < kk ? 'on' : ''}"></i>`).join('')}</div>`;
-        return `<div class="pl ${isFlash(p.id) ? 'flash' : ''}"><span class="t">${esc(p.title)}<small>${esc(p.cat)}${p.alcohol ? ' · alcohol' : ''}${p.official ? '' : ' · ' + p.going.length + ' joined'}${p.status === 'open' && p.deadlineAt > 0 ? ' · ' + Math.max(0, Math.ceil((p.deadlineAt - Date.now()) / 60000)) + ' min left' : ''}</small></span>${mid}${pill}<button class="rm" data-rm="${p.id}" title="Remove this plan">Remove</button></div>`;
+        return `<div class="pl ${isFlash(p.id) ? 'flash' : ''}"><span class="t">${esc(p.title)}<small>${esc(p.cat)}${p.alcohol ? ' · alcohol' : ''}${p.official ? '' : ' · ' + p.going.length + ' joined'}${p.status === 'open' && p.deadlineAt > 0 ? ' · ' + Math.max(0, Math.ceil((p.deadlineAt - Date.now()) / 60000)) + ' min left' : ''}</small></span>${mid}${pill}<span class="pl-acts">${['ahead', 'official'].includes(p.status) ? `<button class="rm" data-end="${p.id}" title="End the event now: its group chat is deleted">End now</button>` : ''}<button class="rm" data-rm="${p.id}" title="Remove this plan">Remove</button></span></div>`;
       }).join('') : '<div class="empty">No plans yet. Ask the room: what would you do this week if you had people to do it with?</div>'}</div></div>
       <div class="sec">
         <div class="eyebrow">Live activity</div>
@@ -177,7 +197,7 @@ function renderQueue() {
     (qs.length ? qs.map(p => {
       const by = p.official ? p.club : `An informal plan by ${anon(PEOPLE[p.host]).replace(/^An? /, m => m.toLowerCase())}`;
       const alc = p.alcohol ? `<div><span class="b b-alc">Alcohol${p.decl?.drinks?.length ? ' · ' + p.decl.drinks.map(k => DRINKS[k]).join(', ') : ''}${p.decl?.glasses ? ` · max ${p.decl.glasses}/person` : ''}</span></div>` : '';
-      return `<div class="qitem"><div class="qtop"><b>${esc(p.title)}</b><small>${esc(by)} · ${esc(p.when)} · ${esc(p.place)}</small></div>${alc}
+      return `<div class="qitem"><div class="qtop"><b>${esc(p.title)}</b><small>${esc(by)} · ${esc(whenLabel(p))} · ${esc(p.place)}</small></div>${alc}
         <ul class="reasons">${(p.reasons || []).map(r => `<li>${esc(r.t)}</li>`).join('')}</ul>
         <div class="qacts"><button class="primary go" data-q="approve" data-id="${p.id}">Approve</button><button class="ghost" data-q="decline" data-id="${p.id}">Decline</button></div></div>`;
     }).join('') : `<div class="empty">Nothing to review. The auto-check has handled every post so far.</div>`);
@@ -222,8 +242,8 @@ function renderSettings() {
   const w = APP.settings?.windowMin ?? 10;
   $('#c-settings').innerHTML = `
     <div class="setting"><h3>Time to reach 3 people</h3><p>How long a new informal plan has to find 3 people before it's cancelled. 5 minutes shows the rule in action during class. Choose Never while testing with only a few people. Applies to plans posted from now on.</p>
-      <div class="opts">${[2, 5, 10, 20, 0].map(m => `<button class="opt" data-win="${m}" aria-pressed="${w === m}">${m ? m + ' min' : 'Never'}</button>`).join('')}</div></div>
-    <div class="setting"><h3>Starter plans</h3><p>Adds plans from example students and official clubs so the feed isn't empty when the class first scans in. Group sizes vary: up to 6, up to 10, or no limit. "Coffee after the lecture" starts at 2 of 3, so the first person to join makes it go ahead.</p>
+      <div class="opts">${[2, 5, 10, 20, 60, 0].map(m => `<button class="opt" data-win="${m}" aria-pressed="${w === m}">${m >= 60 ? m / 60 + ' hour' : m ? m + ' min' : 'Never'}</button>`).join('')}</div></div>
+    <div class="setting"><h3>Starter plans</h3><p>Adds plans from example students and official clubs so the feed isn't empty when the class first scans in. Group sizes vary (up to 6, up to 10, no limit), clubs post open and members-only events, and the club channels and plans that are going ahead come with example messages. "Coffee after the lecture" starts at 2 of 3, so the first person to join makes it go ahead.</p>
       <div class="opts"><button class="ghost" data-act="warm" ${ui.busy ? 'disabled' : ''}>${ui.busy === 'warm' ? 'Adding…' : 'Add starter plans'}</button></div></div>
     <div class="setting"><h3>Reset the campus</h3><p>Deletes every name, plan, chat and activity entry, and sends everyone back to the sign-up screen. The alcohol policy and settings are kept. Do this after each class.</p>
       <div class="opts">${ui.confirmReset
@@ -249,31 +269,56 @@ function setPol(path, v) {
   P.preset = 'custom'; savePolicy(P); logPolicySoon('Customised');
 }
 function alertBar(msg) { $('#banner').innerHTML = `<div class="banner">${esc(msg)}</div>`; setTimeout(() => { $('#banner').innerHTML = ''; }, 6000); }
+// Example students. The last item is the clubs they belong to, so club channels have people in them.
 const BOTS = [
-  ['bot-amira', 'Amira', '2nd year', false], ['bot-leo', 'Léo', '1st year', true], ['bot-yusuf', 'Yusuf', 'Exchange', true], ['bot-ines', 'Inès', '3rd year', false],
-  ['bot-kenji', 'Kenji', 'Exchange', true], ['bot-maya', 'Maya', '1st year', true], ['bot-tom', 'Tom', 'Master', false], ['bot-priya', 'Priya', '2nd year', false]
+  ['bot-amira', 'Amira', '2nd year', false, ['debating', 'isa']], ['bot-leo', 'Léo', '1st year', true, ['hiking', 'rowing']],
+  ['bot-yusuf', 'Yusuf', 'Exchange', true, ['isa', 'football']], ['bot-ines', 'Inès', '3rd year', false, ['photo', 'debating']],
+  ['bot-kenji', 'Kenji', 'Exchange', true, ['isa', 'lang']], ['bot-maya', 'Maya', '1st year', true, ['lang', 'running']],
+  ['bot-tom', 'Tom', 'Master', false, ['running', 'rowing']], ['bot-priya', 'Priya', '2nd year', false, ['debating', 'rowing']]
 ];
+const CLUB_CHATS = {
+  isa: [['bot-kenji', 'Welcome to everyone who arrived this week!'], ['bot-yusuf', 'Is anyone going to the welcome evening tonight?'], ['bot-amira', 'Yes! I\'ll be at the door from 18:45, come say hi']],
+  debating: [['bot-amira', 'Motion for this week: "This house would ban homework"'], ['bot-ines', 'I\'ll take opposition 😄'], ['bot-priya', 'Newcomers: you can just watch the first time, no pressure']],
+  rowing: [['bot-tom', 'River is calm tomorrow, 7:00 session is on'], ['bot-leo', 'Do I need to bring anything?'], ['bot-priya', 'Just sports clothes and a water bottle. We have everything else']],
+  running: [['bot-maya', 'Easy 5k tomorrow morning, all paces welcome'], ['bot-tom', 'I\'ll run at the back with anyone new']],
+  lang: [['bot-kenji', 'Can someone help me with French on Thursday?'], ['bot-maya', 'Sure! Find me at the French table']]
+};
 // Starter plans: every informal plan needs at least 3 people; some cap at 6 or 10, some have no limit (max 0).
+// Times are relative to now, so the demo works whatever time it runs.
 async function warmUp() {
-  const now = Date.now(), win = deadlineIn(now) - now;
-  for (const [id, name, year, newcomer] of BOTS) await api.setDoc(SID, 'people', id, { name, year, newcomer, bot: true, at: now });
-  const base = { desc: '', newcomer: true, alcohol: false, decl: null, extra: 0, reasons: [], postedAt: now, deadlineAt: deadlineIn(now), space: 'informal', official: false, club: null, status: 'open' };
+  const now = Date.now(), win = deadlineIn(now) - now, m = 60000;
+  const inH = h => Math.ceil((now + h * 60 * m) / (15 * m)) * 15 * m;
+  for (const [id, name, year, newcomer, clubs] of BOTS) await api.setDoc(SID, 'people', id, { name, year, newcomer, clubs, bot: true, at: now });
+  const base = { desc: '', newcomer: true, alcohol: false, decl: null, extra: 0, reasons: [], postedAt: now, deadlineAt: deadlineIn(now), space: 'informal', official: false, club: null, clubId: null, membersOnly: false, tags: [], status: 'open' };
   const later = win > 0 ? now + win * 2 : 0;
-  const club = { space: 'official', official: true, max: 0, status: 'official' };
+  const club = id => { const c = CLUBS.find(x => x.id === id); return { space: 'official', official: true, max: 0, status: 'official', club: c.name, clubId: c.id }; };
   const plans = [
-    { title: 'Coffee after the lecture', desc: 'Quick coffee and a chat, anyone welcome.', cat: 'Food', when: 'Today 16:00', place: 'Library café', max: 6, host: 'bot-amira', going: ['bot-amira', 'bot-leo'] },
-    { title: 'Board games night', desc: 'Bring a game or just turn up.', cat: 'Games', when: 'Tonight 19:30', place: 'Résidence B common room', max: 10, host: 'bot-yusuf', going: ['bot-yusuf'], deadlineAt: later },
-    { title: 'Sunset picnic in the park', desc: 'Bring a blanket and something to share. The more the merrier.', cat: 'Food', when: 'Today 18:30', place: 'City park, by the lake', max: 0, host: 'bot-ines', going: ['bot-ines', 'bot-kenji', 'bot-maya', 'bot-tom'], status: 'ahead', aheadAt: now },
-    { title: 'Five-a-side football', desc: 'Two teams of five, all levels.', cat: 'Sport', when: 'Tomorrow 17:00', place: 'Sports centre, pitch 2', max: 10, host: 'bot-tom', going: ['bot-tom', 'bot-leo', 'bot-kenji', 'bot-priya', 'bot-yusuf', 'bot-amira'], status: 'ahead', aheadAt: now },
-    { title: 'Study session before the midterm', desc: 'Quiet revision, then a break together.', cat: 'Study', when: 'Tomorrow 12:30', place: 'Library, 2nd floor', max: 6, host: 'bot-priya', going: ['bot-priya'], newcomer: false, deadlineAt: later },
-    { title: 'French–English conversation swap', desc: 'Half the time in French, half in English. No limit, drop in.', cat: 'Languages', when: 'Sat 15:00', place: 'Student union café', max: 0, host: 'bot-maya', going: ['bot-maya'], deadlineAt: later },
-    { ...club, title: 'International welcome evening', desc: 'Meet students from all over the world. Free snacks.', cat: 'Culture', when: 'Tonight 19:00', place: 'Student union hall', club: 'International Students Association', host: 'bot-kenji', going: ['bot-kenji'], extra: 23 },
-    { ...club, title: 'Social 5k run', desc: 'Easy pace, nobody gets left behind.', cat: 'Sport', when: 'Tomorrow 07:30', place: 'Main campus gate', club: 'Running Club', host: 'bot-tom', going: ['bot-tom'], extra: 8 },
-    { ...club, title: 'Campus photo walk', desc: 'Open to everyone. Any camera or phone is fine.', cat: 'Culture', when: 'Sat 11:00', place: 'Old town, meet at the fountain', club: 'Photography Club', host: 'bot-ines', going: ['bot-ines'], extra: 11 },
-    { ...club, title: 'Day hike in the hills', desc: 'Around 12 km. Bring water and good shoes.', cat: 'Walks', when: 'Sun 08:30', place: 'Train station, main hall', club: 'Hiking & Outdoors Club', host: 'bot-leo', going: ['bot-leo'], extra: 14 },
-    { ...club, title: 'Language café', desc: 'Tables for French, English, Spanish, German and more.', cat: 'Languages', when: 'Thu 18:00', place: 'Library café', club: 'Language Exchange Society', host: 'bot-maya', going: ['bot-maya'], extra: 17 }
+    { title: 'Coffee after the lecture', desc: 'Quick coffee and a chat, anyone welcome.', cat: 'Food', startsAt: inH(1), place: 'Library café', max: 6, host: 'bot-amira', going: ['bot-amira', 'bot-leo'], tags: ['In English', 'Free'] },
+    { title: 'Board games night', desc: 'Bring a game or just turn up.', cat: 'Games', startsAt: inH(5), place: 'Résidence B common room', max: 10, host: 'bot-yusuf', going: ['bot-yusuf'], deadlineAt: later, tags: ['In English', 'Beginner-friendly', 'Free'] },
+    { title: 'Sunset picnic in the park', desc: 'Bring a blanket and something to share. The more the merrier.', cat: 'Food', startsAt: inH(3), place: 'City park, by the lake', max: 0, host: 'bot-ines', going: ['bot-ines', 'bot-kenji', 'bot-maya', 'bot-tom'], status: 'ahead', aheadAt: now - 20 * m, tags: ['Outdoors', 'Free'],
+      chat: [['sys', '3 people are in. The plan is going ahead!'], ['bot-ines', 'Yay! I\'ll bring a big blanket'], ['bot-kenji', 'I can bring crisps and juice'], ['bot-maya', 'Meet at the lake entrance?'], ['bot-tom', 'Perfect, see you there 👋']] },
+    { title: 'Five-a-side football', desc: 'Two teams of five, all levels.', cat: 'Sport', startsAt: at(17, 0, { dayOffset: 1 }, now), place: 'Sports centre, pitch 2', max: 10, host: 'bot-tom', going: ['bot-tom', 'bot-leo', 'bot-kenji', 'bot-priya', 'bot-yusuf', 'bot-amira'], status: 'ahead', aheadAt: now - 40 * m, tags: ['In English', 'Beginner-friendly', 'Outdoors'],
+      chat: [['sys', '3 people are in. The plan is going ahead!'], ['bot-tom', 'We need 4 more for two full teams'], ['bot-priya', 'I\'ll bring a ball'], ['bot-leo', 'Bibs are at reception, I asked']] },
+    { title: 'Study session before the midterm', desc: 'Quiet revision, then a break together.', cat: 'Study', startsAt: at(12, 30, { dayOffset: 1 }, now), place: 'Library, 2nd floor', max: 6, host: 'bot-priya', going: ['bot-priya'], newcomer: false, deadlineAt: later, tags: ['In French'] },
+    { title: 'French–English conversation swap', desc: 'Half the time in French, half in English. No limit, drop in.', cat: 'Languages', startsAt: at(15, 0, { weekday: 6 }, now), place: 'Student union café', max: 0, host: 'bot-maya', going: ['bot-maya'], deadlineAt: later, tags: ['In English', 'In French', 'Beginner-friendly', 'Free'] },
+    { ...club('isa'), title: 'International welcome evening', desc: 'Meet students from all over the world. Free snacks.', cat: 'Culture', startsAt: inH(4), place: 'Student union hall', host: 'bot-kenji', going: ['bot-kenji'], extra: 23, tags: ['In English', 'Free', 'Accessible'] },
+    { ...club('running'), title: 'Social 5k run', desc: 'Easy pace, nobody gets left behind.', cat: 'Sport', startsAt: at(7, 30, { dayOffset: 1 }, now), place: 'Main campus gate', host: 'bot-tom', going: ['bot-tom'], extra: 8, tags: ['Beginner-friendly', 'Outdoors', 'Free'] },
+    { ...club('rowing'), title: 'Try rowing: open session', desc: 'Never rowed? Come and try. Coaches on the water with you.', cat: 'Sport', startsAt: at(10, 0, { weekday: 6 }, now), place: 'Boathouse, river path', host: 'bot-leo', going: ['bot-leo'], extra: 6, tags: ['Beginner-friendly', 'Outdoors', 'In English'] },
+    { ...club('rowing'), membersOnly: true, newcomer: false, title: 'Early training on the water', desc: 'Crew practice for the regatta.', cat: 'Sport', startsAt: at(7, 0, { dayOffset: 1 }, now), place: 'Boathouse', host: 'bot-tom', going: ['bot-tom', 'bot-priya'], extra: 9, tags: ['Outdoors'] },
+    { ...club('debating'), membersOnly: true, title: 'Members\' practice debate', desc: 'This house would ban homework. Teams drawn on the night.', cat: 'Study', startsAt: at(18, 30, { dayOffset: 1 }, now), place: 'Seminar room 4', host: 'bot-amira', going: ['bot-amira', 'bot-ines'], extra: 12, tags: ['In English'] },
+    { ...club('photo'), title: 'Campus photo walk', desc: 'Open to everyone. Any camera or phone is fine.', cat: 'Culture', startsAt: at(11, 0, { weekday: 6 }, now), place: 'Old town, meet at the fountain', host: 'bot-ines', going: ['bot-ines'], extra: 11, tags: ['Outdoors', 'Free'] },
+    { ...club('hiking'), title: 'Day hike in the hills', desc: 'Around 12 km. Bring water and good shoes.', cat: 'Walks', startsAt: at(8, 30, { weekday: 0 }, now), place: 'Train station, main hall', host: 'bot-leo', going: ['bot-leo'], extra: 14, tags: ['Outdoors'] },
+    { ...club('lang'), title: 'Language café', desc: 'Tables for French, English, Spanish, German and more.', cat: 'Languages', startsAt: at(18, 0, { dayOffset: 2 }, now), place: 'Library café', host: 'bot-maya', going: ['bot-maya'], extra: 17, tags: ['In English', 'In French', 'Beginner-friendly', 'Free'] }
   ];
-  for (const p of plans) await api.addPlan(SID, { ...base, ...p });
+  const say = (id, lines, kind) => Promise.all(lines.map(([from, text], i) =>
+    api.sendMessage(SID, id, { from, text, at: now - (lines.length - i) * 3 * m }, kind).catch(e => console.warn('[tagalong] example message', e))));
+  for (const { chat, ...p } of plans) {
+    const plan = { ...base, ...p, when: whenLabel(p) };
+    if (plan.deadlineAt > 0) plan.deadlineAt = Math.min(plan.deadlineAt, plan.startsAt);
+    const id = await api.addPlan(SID, plan);
+    if (chat) await say(id, chat);
+  }
+  for (const [clubId, lines] of Object.entries(CLUB_CHATS)) await say(clubId, lines, 'clubchats');
 }
 
 document.addEventListener('submit', async e => {
@@ -296,6 +341,11 @@ document.addEventListener('click', async e => {
   }
   if (b.dataset.pol) { setPol(b.dataset.pol, b.dataset.v); return; }
   if (b.dataset.win) { api.setApp({ settings: { ...(APP.settings || {}), windowMin: +b.dataset.win } }); return; }
+  if (b.dataset.end) {
+    const p = PLANS.find(x => x.id === b.dataset.end); if (!p) return;
+    b.disabled = true;
+    await api.patchPlan(SID, p.id, { endsAt: Date.now() - 1 }); await endFinished(p.id); return;
+  }
   if (b.dataset.rm) {
     const p = PLANS.find(x => x.id === b.dataset.rm); if (!p) return;
     await api.patchPlan(SID, p.id, { status: 'removed' }); log('removed', `Organisers removed “${p.title}”`); return;
@@ -317,7 +367,7 @@ document.addEventListener('click', async e => {
   else if (act === 'reset-yes') {
     ui.busy = 'reset'; renderSettings();
     const old = SID;
-    try { await api.setApp({ sid: newId() }); await api.wipeSession(old); }
+    try { await api.setApp({ sid: newId() }); await api.wipeSession(old, CLUBS.map(c => c.id)); }
     catch (x) { console.error(x); alertBar('The reset didn\'t finish. Try again.'); }
     ui.busy = ''; ui.confirmReset = false; renderSettings();
   }

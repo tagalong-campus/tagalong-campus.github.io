@@ -15,6 +15,11 @@ service cloud.firestore {
     }
 
     match /sessions/{sid} {
+      // Club membership lives on the student's own profile (people/{uid}.clubs). In the demo, joining is instant.
+      function isMember(club) {
+        return signedIn() && club in get(/databases/$(database)/documents/sessions/$(sid)/people/$(request.auth.uid)).data.get('clubs', []);
+      }
+
       match /people/{uid} {
         allow read: if signedIn();
         allow create, update: if isAdmin() || (signedIn() && request.auth.uid == uid
@@ -31,7 +36,7 @@ service cloud.firestore {
           && request.resource.data.title is string && request.resource.data.title.size() <= 60);
         // Students may only add or remove themselves, and only move a plan to "ahead" (3+ people)
         // or "cancelled" (deadline passed with fewer than 3).
-        allow update: if isAdmin() || (signedIn() && onlyMembership() && ownChange() && okStatus());
+        allow update: if isAdmin() || (signedIn() && onlyMembership() && ownChange() && okStatus() && memberOk());
         allow delete: if isAdmin();
 
         function onlyMembership() {
@@ -41,6 +46,12 @@ service cloud.firestore {
           let before = resource.data.going.toSet();
           let after = request.resource.data.going.toSet();
           return after.difference(before).union(before.difference(after)).hasOnly([request.auth.uid]);
+        }
+        // Members-only club events: only club members can join (anyone can leave).
+        function memberOk() {
+          return !resource.data.get('membersOnly', false)
+            || !(request.auth.uid in request.resource.data.going)
+            || isMember(resource.data.get('clubId', ''));
         }
         function okStatus() {
           let from = resource.data.status;
@@ -52,12 +63,20 @@ service cloud.firestore {
 
         match /messages/{mid} {
           allow read: if signedIn();
-          allow create: if signedIn()
+          // The presenter can add example messages (starter plans).
+          allow create: if isAdmin() || signedIn()
             && (request.resource.data.from == request.auth.uid || request.resource.data.from == 'sys')
             && request.auth.uid in getAfter(/databases/$(database)/documents/sessions/$(sid)/plans/$(pid)).data.going
             && request.resource.data.text is string && request.resource.data.text.size() <= 300;
           allow delete: if isAdmin();
         }
+      }
+
+      match /clubchats/{club}/messages/{mid} {
+        allow read: if isAdmin() || isMember(club);
+        allow create: if isAdmin() || (isMember(club) && request.resource.data.from == request.auth.uid
+          && request.resource.data.text is string && request.resource.data.text.size() <= 300);
+        allow delete: if isAdmin();
       }
 
       match /log/{id} {

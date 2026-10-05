@@ -4,33 +4,36 @@
 <script type="module">
 // Local mode only: fills the campus with example data, then open /?local=1&as=alex and /console.html?local=1&admin=1.
 import { presetPolicy } from '../js/policy.js';
-const now = Date.now(), m = 60000;
+const now = Date.now(), m = 60000, h = 60 * m;
 const people = {
-  'u-alex': { name: 'Alex', year: '1st year', newcomer: true, at: now - 9 * m },
+  'u-alex': { name: 'Alex', year: '1st year', newcomer: true, at: now - 9 * m, clubs: ['running'] },
   'u-sam': { name: 'Sam', year: 'Exchange', newcomer: true, at: now - 8 * m },
   'u-noor': { name: 'Noor', year: '2nd year', newcomer: false, at: now - 7 * m },
   'u-jo': { name: 'Jo', year: 'Master', newcomer: false, at: now - 6 * m },
-  'bot-amira': { name: 'Amira', year: '2nd year', newcomer: false, bot: true, at: now - 10 * m },
+  'bot-amira': { name: 'Amira', year: '2nd year', newcomer: false, bot: true, at: now - 10 * m, clubs: ['debating', 'running'] },
   'bot-leo': { name: 'Léo', year: '1st year', newcomer: true, bot: true, at: now - 10 * m },
   'bot-yusuf': { name: 'Yusuf', year: 'Exchange', newcomer: true, bot: true, at: now - 10 * m },
   'bot-kenji': { name: 'Kenji', year: 'Exchange', newcomer: true, bot: true, at: now - 10 * m },
   'bot-maya': { name: 'Maya', year: '1st year', newcomer: true, bot: true, at: now - 10 * m }
 };
-const club = { space: 'official', official: true, max: 0, status: 'official', alcohol: false, newcomer: true };
+const club = { space: 'official', official: true, max: 0, status: 'official', alcohol: false, newcomer: true, membersOnly: false };
 const base = { desc: '', newcomer: true, alcohol: false, decl: null, extra: 0, reasons: [], space: 'informal', official: false, club: null, max: 6 };
 const plans = {
-  coffee: { ...base, title: 'Coffee after the lecture', desc: 'Quick coffee and a chat, anyone welcome.', cat: 'Food', when: 'Today 16:00', place: 'Library café', host: 'bot-amira', going: ['bot-amira', 'bot-leo'], status: 'open', postedAt: now - 9 * m, deadlineAt: now + 6 * m },
-  games: { ...base, max: 10, title: 'Board games night', cat: 'Games', when: 'Tonight 19:30', place: 'Résidence B common room', host: 'bot-yusuf', going: ['bot-yusuf', 'u-sam', 'u-alex'], status: 'ahead', postedAt: now - 8 * m, deadlineAt: now + 2 * m },
-  walk: { ...base, title: 'Sunday lake walk', cat: 'Walks', when: 'Sun 10:00', place: 'Main campus gate', max: 10, host: 'u-noor', going: ['u-noor'], status: 'open', postedAt: now - 3 * m, deadlineAt: now + 7 * m },
-  picnic: { ...base, title: 'Sunset picnic in the park', cat: 'Food', when: 'Today 18:30', place: 'City park, by the lake', max: 0, host: 'bot-kenji', going: ['bot-kenji', 'bot-maya'], status: 'open', postedAt: now - 2 * m, deadlineAt: now + 8 * m },
-  isa: { ...base, ...club, club: 'International Students Association', title: 'International welcome evening', cat: 'Culture', when: 'Tonight 19:00', place: 'Student union hall', extra: 23, host: 'bot-kenji', going: ['bot-kenji'], postedAt: now - 6 * m },
-  run: { ...base, ...club, club: 'Running Club', title: 'Social 5k run', cat: 'Sport', when: 'Tomorrow 07:30', place: 'Main campus gate', extra: 8, host: 'bot-leo', going: ['bot-leo'], postedAt: now - 6 * m },
-  wine: { ...base, space: 'official', official: true, club: 'Oenology Society', title: 'Wine & cheese evening', cat: 'Culture', when: 'Thu 19:00', place: 'Student bar', max: 0, extra: 6, host: 'u-jo', going: ['u-jo'], status: 'official', alcohol: true, newcomer: false,
+  coffee: { ...base, startsAt: now + h, tags: ['In English', 'Free'], title: 'Coffee after the lecture', desc: 'Quick coffee and a chat, anyone welcome.', cat: 'Food', when: 'Today 16:00', place: 'Library café', host: 'bot-amira', going: ['bot-amira', 'bot-leo'], status: 'open', postedAt: now - 9 * m, deadlineAt: now + 6 * m },
+  games: { ...base, max: 10, startsAt: now + 5 * h, tags: ['Beginner-friendly'], title: 'Board games night', cat: 'Games', when: 'Tonight 19:30', place: 'Résidence B common room', host: 'bot-yusuf', going: ['bot-yusuf', 'u-sam', 'u-alex'], status: 'ahead', postedAt: now - 8 * m, deadlineAt: now + 2 * m },
+  walk: { ...base, startsAt: now + 50 * h, tags: ['Outdoors'], title: 'Sunday lake walk', cat: 'Walks', when: 'Sun 10:00', place: 'Main campus gate', max: 10, host: 'u-noor', going: ['u-noor'], status: 'open', postedAt: now - 3 * m, deadlineAt: now + 7 * m },
+  picnic: { ...base, startsAt: now + 3 * h, tags: ['Outdoors', 'Free'], title: 'Sunset picnic in the park', cat: 'Food', when: 'Today 18:30', place: 'City park, by the lake', max: 0, host: 'bot-kenji', going: ['bot-kenji', 'bot-maya'], status: 'open', postedAt: now - 2 * m, deadlineAt: now + 8 * m },
+  isa: { ...base, ...club, startsAt: now + 4 * h, tags: ['In English'], club: 'International Students Association', clubId: 'isa', title: 'International welcome evening', cat: 'Culture', when: 'Tonight 19:00', place: 'Student union hall', extra: 23, host: 'bot-kenji', going: ['bot-kenji'], postedAt: now - 6 * m },
+  run: { ...base, ...club, startsAt: now + 20 * h, club: 'Running Club', clubId: 'running', title: 'Social 5k run', cat: 'Sport', when: 'Tomorrow 07:30', place: 'Main campus gate', extra: 8, host: 'bot-leo', going: ['bot-leo'], postedAt: now - 6 * m },
+  debate: { ...base, ...club, membersOnly: true, startsAt: now + 28 * h, club: 'Debating Club', clubId: 'debating', title: 'Members\' practice debate', cat: 'Study', when: 'Tomorrow 18:30', place: 'Seminar room 4', extra: 12, host: 'bot-amira', going: ['bot-amira'], postedAt: now - 4 * m },
+  wine: { ...base, membersOnly: true, startsAt: now + 52 * h, space: 'official', official: true, club: 'Oenology Society', clubId: 'oenology', title: 'Wine & cheese evening', cat: 'Culture', when: 'Thu 19:00', place: 'Student bar', max: 0, extra: 6, host: 'u-jo', going: ['u-jo'], status: 'official', alcohol: true, newcomer: false,
     decl: { drinks: ['wine'], glasses: 1, resp: 'Jo', trained: true, food: true, soft: true, members: true }, postedAt: now - 5 * m, deadlineAt: now + 10 * m },
   drinks: { ...base, title: 'Drinks after class', cat: 'Nights out', when: 'Today 17:30', place: 'Café du Campus', host: 'u-alex', going: ['u-alex'], status: 'review', postedAt: now - m, deadlineAt: now + 9 * m,
     reasons: [{ l: 'review', t: 'Mentions “drinks”, which might mean alcohol. A person should check.' }] }
 };
-const msgs = { games: {
+const msgs = {
+  'clubchats:running': { a: { from: 'bot-amira', text: 'Easy 5k tomorrow morning, all paces welcome', at: now - 30 * m }, b: { from: 'u-alex', text: 'I\'m in!', at: now - 20 * m } },
+  games: {
   a: { from: 'sys', text: '3 people are in. The plan is going ahead!', at: now - 4 * m },
   b: { from: 'bot-yusuf', text: 'Amazing, see you all at 19:30!', at: now - 3 * m },
   c: { from: 'u-sam', text: 'I can bring Codenames', at: now - 2 * m }
